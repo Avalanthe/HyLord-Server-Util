@@ -1,4 +1,9 @@
-Welcome to HyLord Server Util. Simplest of setups:
+Welcome to HyLord Server Util.
+
+@HyLordly on X: https://x.com/HyLordly
+and Discord for Feature Requests and Bug Reports: https://discord.gg/3jvX6M3n
+
+Simplest of setups:
 
 <h1>Step 1: Download</h1>
 Go to the latest Release

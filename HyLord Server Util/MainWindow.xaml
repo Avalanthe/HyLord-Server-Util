@@ -1,0 +1,517 @@
+﻿<Window x:Class="HyLordServerUtil.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="HyLord Server Utility"
+        Width="870"
+        Height="500"
+        Background="#14161A"
+        FontFamily="Consolas"
+        Closing="MainWindow_Closing">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+    </Window.Resources>
+    
+    
+    <Grid Margin="10">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="29*"/>
+            <ColumnDefinition Width="241*"/>
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Border Background="#1E2228" Padding="12" CornerRadius="8" Margin="0,0,0,10" Grid.ColumnSpan="2">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel>
+                    <TextBlock x:Name="ServerNameDisplay" Text="HyLord Server" FontSize="20" Foreground="#E6E6E6"/>
+
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock x:Name="PlayerCountText" Text="Players: 0 / 0" Foreground="#6FC3FF" Margin="0,0,12,0"/>
+
+                        <TextBlock x:Name="MemoryText" Text="Memory: -- MB" Foreground="#8AFF80" Margin="0,0,12,0"/>
+
+                        <TextBlock x:Name="CpuText" Text="CPU: --%" Foreground="#FFD27D"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+
+                    <Ellipse x:Name="StatusLight" Width="14" Height="14" Fill="#AA3333" Margin="0,0,8,0"/>
+
+                    <TextBlock x:Name="StatusText" Text="Offline" Foreground="#AAA" VerticalAlignment="Center" Margin="0,0,12,0"/>
+
+                    <Button Content="Start" Width="80" Margin="0,0,6,0" Click="TopStart_Click"/>
+
+                    <Button Content="Restart" Width="80"  Margin="0,0,6,0"  Click="TopRestart_Click"/>
+
+                    <Button Content="Stop" Width="80" Click="TopStop_Click"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <TabControl Grid.ColumnSpan="2" Margin="0,71,0,0" Grid.RowSpan="2" Background="#14161A">
+
+            <TabItem Header="Performance">
+                <Grid Margin="12">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <Border Background="#1E2228" CornerRadius="6" Padding="10" Margin="0,0,0,10">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition/>
+                                <ColumnDefinition/>
+                                <ColumnDefinition/>
+                                <ColumnDefinition/>
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel>
+                                <TextBlock Text="CPU (current / avg / peak)" Foreground="#AAA"/>
+                                <TextBlock x:Name="PerfCpuSummary" Text="--% / --% / --%" Foreground="#E6E6E6" FontSize="16"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="Memory (current / peak)" Foreground="#AAA"/>
+                                <TextBlock x:Name="PerfMemSummary" Text="-- MB / -- MB" Foreground="#E6E6E6" FontSize="16"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="Uptime" Foreground="#AAA"/>
+                                <TextBlock x:Name="PerfUptime" Text="--:--:--" Foreground="#E6E6E6" FontSize="16"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="3">
+                                <TextBlock Text="Peak Players (session)" Foreground="#AAA"/>
+                                <TextBlock x:Name="PerfPeakPlayers" Text="0" Foreground="#E6E6E6" FontSize="16"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <Border Grid.Row="1" Background="#0E1013" CornerRadius="6" Padding="8" Margin="0,0,0,10">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <DockPanel Grid.Row="0" Margin="0,0,0,6">
+                                <TextBlock Text="CPU %" Foreground="#AAA" FontSize="14"/>
+                                <TextBlock x:Name="PerfCpuNow" Text="--%" Foreground="#E6E6E6" Margin="12,0,0,0"/>
+                            </DockPanel>
+
+                            <Canvas x:Name="CpuCanvas" Grid.Row="1" Background="Transparent" SizeChanged="PerfCanvas_SizeChanged"/>
+                        </Grid>
+                    </Border>
+
+                    <Border Grid.Row="2" Background="#0E1013" CornerRadius="6" Padding="8">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <DockPanel Grid.Row="0" Margin="0,0,0,6">
+                                <TextBlock Text="Memory (MB)" Foreground="#AAA" FontSize="14"/>
+                                <TextBlock x:Name="PerfMemNow" Text="-- MB" Foreground="#E6E6E6" Margin="12,0,0,0"/>
+                            </DockPanel>
+
+                            <Canvas x:Name="MemCanvas" Grid.Row="1" Background="Transparent" SizeChanged="PerfCanvas_SizeChanged"/>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+
+            <TabItem Header="Config">
+                <ScrollViewer Margin="12">
+                    <StackPanel MaxWidth="520">
+
+                        <GroupBox Header="Server Config" Background="#1E2228" Foreground="#FFF" Margin="0,0,0,16">
+                            <StackPanel Margin="12">
+
+                                <TextBlock Text="Server Name"/>
+                                <TextBox x:Name="CfgServerName"/>
+
+                                <TextBlock Text="MOTD" Margin="0,8,0,0"/>
+                                <TextBox x:Name="CfgMotd"/>
+
+                                <TextBlock Text="Password" Margin="0,8,0,0"/>
+                                <PasswordBox x:Name="CfgPassword"/>
+
+                                <TextBlock Text="Max Players" Margin="0,8,0,0"/>
+                                <TextBox x:Name="CfgMaxPlayers" PreviewTextInput="DigitsOnly_PreviewTextInput" ToolTip="Numbers only"/>
+
+                                <TextBlock Text="View Radius" Margin="0,8,0,0"/>
+                                <TextBox x:Name="CfgViewRadius" PreviewTextInput="DigitsOnly_PreviewTextInput" ToolTip="Numbers only"/>
+
+                                <TextBlock Text="Server Network Port" Margin="0,8,0,0"/>
+                                <TextBox x:Name="CfgNetworkPort" PreviewTextInput="DigitsOnly_PreviewTextInput" ToolTip="Default: 5520"/>
+
+                                <Separator Margin="0,12,0,12"/>
+
+                                <GroupBox Header="Auto Restart" Margin="0,0,0,8" Foreground="#FFF">
+                                    <StackPanel Margin="12">
+
+                                        <CheckBox x:Name="CfgAutoRestartEnabled" Content="Enable automatic restarts" Checked="AutoRestart_Changed" Unchecked="AutoRestart_Changed" Margin="0,0,0,10" Foreground="#FFF"/>
+
+                                        <WrapPanel>
+                                            <TextBlock Text="Frequency" Foreground="#FFF" Width="90" VerticalAlignment="Center"/>
+                                            <ComboBox x:Name="CfgAutoRestartMode" Width="140" SelectionChanged="AutoRestart_Changed">
+                                                <ComboBoxItem Content="Daily"/>
+                                                <ComboBoxItem Content="Weekly"/>
+                                            </ComboBox>
+
+                                            <TextBlock Text="Day" Foreground="#FFF" Width="50" Margin="18,0,0,0" VerticalAlignment="Center"/>
+                                            <ComboBox x:Name="CfgAutoRestartDay" Width="140" SelectionChanged="AutoRestart_Changed"/>
+
+                                            <TextBlock Text="Time" Foreground="#FFF" Width="60" Margin="18,0,0,0" VerticalAlignment="Center"/>
+                                            <ComboBox x:Name="CfgAutoRestartHour" Width="70" SelectionChanged="AutoRestart_Changed"/>
+                                            <TextBlock Text=":" Foreground="#E6E6E6" Margin="6,0,6,0" VerticalAlignment="Center"/>
+                                            <ComboBox x:Name="CfgAutoRestartMinute" Width="70" SelectionChanged="AutoRestart_Changed"/>
+                                        </WrapPanel>
+
+                                        <TextBlock x:Name="CfgNextAutoRestart" Text="Next: --" Foreground="#FFF" Margin="0,10,0,0"/>
+
+                                    </StackPanel>
+                                </GroupBox>
+
+
+                                <Separator Margin="0,12,0,12"/>
+                                
+                                
+                                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                    <Button Content="Reload" Width="90" Click="ConfigReload_Click"/>
+                                    <Button Content="Save" Width="90" Margin="8,0,0,0" Click="ConfigSave_Click"/>
+                                    <Button Content="Save + Restart" Width="140" Margin="8,0,0,0" Click="ConfigSaveRestart_Click"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </GroupBox>
+
+
+
+
+
+
+                        <GroupBox Header="World Config" Margin="0,0,0,16" Background="#1E2228" Foreground="#FFF">
+                            <StackPanel Margin="12">
+
+                                <TextBlock Text="World" Foreground="#AAA"/>
+                                <TextBlock Text="default (.\universe\worlds\default\config.json)" Foreground="#E6E6E6" Margin="0,0,0,10"/>
+
+                                <TextBlock Text="Seed (string or number)"/>
+                                <TextBox x:Name="WCfgSeed" />
+
+                                <Separator Margin="0,12,0,12"/>
+
+                                <WrapPanel>
+                                    <CheckBox x:Name="WCfgIsPvpEnabled" Content="PVP Enabled" Margin="0,0,18,8" Foreground="#FFF"/>
+                                    <CheckBox x:Name="WCfgIsFallDamageEnabled" Content="Fall Damage Enabled" Margin="0,0,18,8" Foreground="#FFF"/>
+                                    <CheckBox x:Name="WCfgIsSpawningNPC" Content="Spawning NPC" Margin="0,0,18,8" Foreground="#FFF"/>
+                                    <CheckBox x:Name="WCfgIsSpawnMarkersEnabled" Content="Spawn Markers Enabled" Margin="0,0,18,8" Foreground="#FFF"/>
+                                    <CheckBox x:Name="WCfgIsCompassUpdating" Content="Compass Updating" Margin="0,0,18,8" Foreground="#FFF"/>
+                                    <CheckBox x:Name="WCfgIsSavingPlayers" Content="Saving Players" Margin="0,0,18,8" Foreground="#FFF"/>
+                                    <CheckBox x:Name="WCfgIsSavingChunks" Content="Saving Chunks" Margin="0,0,18,8" Foreground="#FFF"/>
+                                    <CheckBox x:Name="WCfgSaveNewChunks" Content="Save New Chunks" Margin="0,0,18,8" Foreground="#FFF"/>
+                                    <CheckBox x:Name="WCfgIsUnloadingChunks" Content="Unloading Chunks" Margin="0,0,18,8" Foreground="#FFF"/>
+                                    <CheckBox x:Name="WCfgIsObjectiveMarkersEnabled" Content="Objective Markers Enabled" Margin="0,0,18,8" Foreground="#FFF"/>
+                                </WrapPanel>
+
+                                <Separator Margin="0,12,0,12"/>
+
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Content="Reload World" Width="120" Click="WorldConfigReload_Click"/>
+                                    <Button Content="Save World" Width="120" Margin="8,0,0,0" Click="WorldConfigSave_Click"/>
+                                </StackPanel>
+
+                            </StackPanel>
+                        </GroupBox>
+
+
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Mods">
+    <Grid Margin="12">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+        <Border Background="#1E2228" CornerRadius="6" Padding="10" Margin="0,0,0,10">
+            <DockPanel>
+                <TextBlock Text="Loaded: .\mods\    Unloaded: .\mods_unloaded\" Foreground="#AAA" VerticalAlignment="Center" Margin="0,0,10,0"/>
+
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                    <Button Content="Open Mods Folder" Width="110" Margin="0,0,8,0" Click="OpenModsFolder_Click"/>
+                    <Button Content="Open Unloaded Folder" Width="130" Margin="0,0,8,0" Click="OpenUnloadedModsFolder_Click"/>
+                    <Button Content="Refresh" Width="90" Click="RefreshMods_Click"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+
+                    <Border Grid.Row="1" Background="#3A2A00" BorderBrush="#FFB300" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,10"  Visibility="{Binding ModsBannerVisible, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <DockPanel>
+                            <TextBlock Text="Mods are locked while the server is running. Stop the server to Load/Unload mods." Foreground="#FFD27D" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                        </DockPanel>
+                    </Border>
+
+
+                    <TabControl Grid.Row="2">
+                        <TabItem Header="Loaded">
+                <ListView x:Name="LoadedModsList" Background="#0E1013" Foreground="#FFFFFF" BorderThickness="0">
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="Name" Width="200" DisplayMemberBinding="{Binding Name}"/>
+                            <GridViewColumn Header="Version" Width="90" DisplayMemberBinding="{Binding Version}"/>
+                            <GridViewColumn Header="Description" Width="420" DisplayMemberBinding="{Binding Description}"/>
+                            <GridViewColumn Header="File" Width="220" DisplayMemberBinding="{Binding FileName}"/>
+                            <GridViewColumn Header="Status" Width="140" DisplayMemberBinding="{Binding Status}"/>
+                            <GridViewColumn Header="" Width="90">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Content="Unload" Width="80" Click="ModAction_Click" IsEnabled="{Binding DataContext.ModsMoveEnabled, RelativeSource={RelativeSource AncestorType=Window}}" ToolTip="Stop the server to move mods"/>
+                                     </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                        </GridView>
+                    </ListView.View>
+                </ListView>
+            </TabItem>
+
+            <TabItem Header="Unloaded">
+                <ListView x:Name="UnloadedModsList" Background="#0E1013" Foreground="#FFFFFF" BorderThickness="0">
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="Name" Width="200" DisplayMemberBinding="{Binding Name}"/>
+                            <GridViewColumn Header="Version" Width="90" DisplayMemberBinding="{Binding Version}"/>
+                            <GridViewColumn Header="Description" Width="420" DisplayMemberBinding="{Binding Description}"/>
+                            <GridViewColumn Header="File" Width="220" DisplayMemberBinding="{Binding FileName}"/>
+                            <GridViewColumn Header="Status" Width="140" DisplayMemberBinding="{Binding Status}"/>
+                            <GridViewColumn Header="" Width="90">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Content="Load" Width="80" Click="ModAction_Click" ToolTip="Stop the server to move mods"/>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                        </GridView>
+                    </ListView.View>
+                </ListView>
+            </TabItem>
+        </TabControl>
+    </Grid>
+</TabItem>
+
+
+            <TabItem Header="Players">
+                <ListView x:Name="PlayerList" Background="#0E1013" Foreground="#FFFFFF" BorderThickness="0" Margin="8">
+
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <DockPanel>
+
+                                <DockPanel.ToolTip>
+                                    <Border Background="#1E2228" Padding="8" CornerRadius="6">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Name}" FontWeight="Bold" Foreground="#E6E6E6"/>
+                                            <TextBlock Text="{Binding Hash}" Foreground="#AAA" Margin="0,2,0,0"/>
+
+                                            <TextBlock Text="Joined:" Foreground="#AAA" Margin="0,6,0,0"/>
+                                            <TextBlock Text="{Binding JoinedAt}" Foreground="#8AFF80"/>
+
+                                            <TextBlock Text="Session:" Foreground="#AAA" Margin="0,6,0,0"/>
+                                            <TextBlock Text="{Binding SessionLength}" Foreground="#8AFF80"/>
+                                        </StackPanel>
+                                    </Border>
+                                </DockPanel.ToolTip>
+
+                                <DockPanel.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Copy Name" Click="CopyName_Click"/>
+                                        <MenuItem Header="Copy Hash" Click="CopyHash_Click"/>
+                                        <Separator/>
+                                        <MenuItem Header="Op" Click="Op_Click"/>
+                                        <MenuItem Header="Kick" Click="Kick_Click"/>
+                                        <MenuItem Header="Ban" Click="Ban_Click"/>
+                                    </ContextMenu>
+                                </DockPanel.ContextMenu>
+
+                                
+                                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" Margin="0,0,10,0">
+                                    <Button Content="Op" Width="44" Margin="0,0,6,0" Click="Op_Click"/>
+                                    <Button Content="Kick" Width="54" Margin="0,0,6,0" Click="Kick_Click"/>
+                                    <Button Content="Ban" Width="54" Click="Ban_Click"/>
+                                </StackPanel>
+                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center" Foreground="#FFFFFF"/>
+
+                            </DockPanel>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </TabItem>
+
+            <TabItem Header="Whitelist">
+                <StackPanel Margin="12">
+                    <TextBlock Text="Whitelist / blacklist management" Foreground="#AAA"/>
+                </StackPanel>
+            </TabItem>
+
+            <TabItem Header="Ban List">
+                <Grid Margin="12">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <Border Background="#1E2228" CornerRadius="6" Padding="10" Margin="0,0,0,10">
+                        <DockPanel>
+                            <TextBlock Text="bans.json" Foreground="#AAA" VerticalAlignment="Center"/>
+
+                            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                                <Button Content="Open File" Width="110" Margin="0,0,8,0"  Click="OpenBansFile_Click"/>
+                                <Button Content="Refresh"  Width="90" Click="RefreshBans_Click"/>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+
+                    <Border Grid.Row="1" Background="#3A2A00" BorderBrush="#FFB300" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,10" Visibility="{Binding BansBannerVisible, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <TextBlock Text="Server is running. Unban will update bans.json and also send an unban command. If the server ignores file changes while running, restart may be required."  Foreground="#FFD27D" TextWrapping="Wrap"/>
+                    </Border>
+
+                    <ListView x:Name="BansList" Grid.Row="2" Background="#0E1013" Foreground="#FFFFFF" BorderThickness="0">
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Header="Name" Width="160" DisplayMemberBinding="{Binding DisplayName}"/>
+                                <GridViewColumn Header="Target (hash)" Width="240" DisplayMemberBinding="{Binding Target}"/>
+                                <GridViewColumn Header="Reason" Width="340" DisplayMemberBinding="{Binding Reason}"/>
+                                <GridViewColumn Header="Type" Width="90" DisplayMemberBinding="{Binding Type}"/>
+                                <GridViewColumn Header="When" Width="160" DisplayMemberBinding="{Binding TimestampLocal}"/>
+                                <GridViewColumn Header="By" Width="240" DisplayMemberBinding="{Binding By}"/>
+
+                                <GridViewColumn Header="" Width="90">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Button Content="Unban" Width="80" Click="Unban_Click"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Console">
+                <Grid Margin="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <Border Grid.Row="0" Background="#0E1013" CornerRadius="6" Padding="6">
+                        <RichTextBox x:Name="ConsoleOutput" Background="Transparent" Foreground="#D8D8D8" IsReadOnly="True" BorderThickness="0" VerticalScrollBarVisibility="Auto" PreviewKeyDown="ConsoleOutput_KeyDown"/>
+                    </Border>
+
+                    <Border Grid.Row="1" Background="#1E2228" CornerRadius="6" Padding="6" Margin="0,8,0,0">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                <ToggleButton x:Name="InfoToggle" Content="Info" IsChecked="True" Margin="0,0,6,0"/>
+                                <ToggleButton x:Name="WarnToggle" Content="Warn" IsChecked="True" Margin="0,0,6,0"/>
+                                <ToggleButton x:Name="ErrorToggle" Content="Error" IsChecked="True" Margin="0,0,12,0"/>
+                                <CheckBox x:Name="TimestampToggle" Content="Timestamps" IsChecked="True" Foreground="#AAA"/>
+                            </StackPanel>
+
+                            <Grid Grid.Row="1">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <TextBox x:Name="CommandInput" Grid.Column="0" Height="34"  Margin="0,0,8,0" Background="#14161A" Foreground="#FFFFFF" BorderBrush="#333" KeyDown="CommandInput_KeyDown"/>
+
+                                <Button Content="Send" Grid.Column="1" Width="90" Click="Send_Click"/>
+                            </Grid>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="About">
+                <Grid Margin="12">
+                    <Border Background="#1E2228" CornerRadius="8" Padding="16" MaxWidth="640">
+                        <StackPanel>
+
+                            <TextBlock Text="HyLord Server Utility" FontSize="22" Foreground="#E6E6E6" FontWeight="Bold"/>
+
+                            <TextBlock Text="A full-stop server panel for managing your Hytale server." Foreground="#AAA" Margin="0,6,0,14" TextWrapping="Wrap"/>
+
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="160"/>
+                                    <ColumnDefinition/>
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Release:" Foreground="#AAA"/>
+                                <TextBlock Grid.Row="0" Grid.Column="1" Text="Beta" Foreground="#E6E6E6"/>
+
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Version:" Foreground="#AAA" Margin="0,6,0,0"/>
+                                <TextBlock Grid.Row="1" Grid.Column="1" Text="v0.2 (Jan 20 2026 05:40 AM)" Foreground="#E6E6E6" Margin="0,6,0,0"/>
+
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Author:" Foreground="#AAA" Margin="0,6,0,0"/>
+                                <TextBlock Grid.Row="2" Grid.Column="1" Margin="0,6,0,0" Foreground="#AAA">
+                                    HyLordly
+                                        <Hyperlink Click="OpenAuthorX_Click" Foreground="#4EA1FF" TextDecorations="Underline">
+                                            https://x.com/HyLordly
+                                        </Hyperlink>
+                                </TextBlock>
+
+
+                                <TextBlock Grid.Row="3" Grid.Column="0" Text="Community:" Foreground="#AAA" Margin="0,6,0,0"/>
+                                <TextBlock Grid.Row="3" Grid.Column="1" Margin="0,6,0,0" Foreground="#AAA">
+                                    Discord
+                                        <Hyperlink Click="OpenDiscord_Click" Foreground="#4EA1FF" TextDecorations="Underline">
+                                            https://discord.gg/3jvX6M3n
+                                        </Hyperlink>
+                                </TextBlock>
+
+                            </Grid>
+
+                            <Separator Margin="0,16,0,12"/>
+
+                            <TextBlock Text="HyLord Server Utility ©2026 HyLordly" Foreground="#666"/>
+                            <TextBlock Text="All other Hytale marks and references © Hytale team and Hypixel Studios" Foreground="#666"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+
+        </TabControl>
+    </Grid>
+</Window>

@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows7.0</TargetFramework>
+    <RootNamespace>HyLordServerUtil</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+	<CetCompat>false</CetCompat>
+	<AssemblyName>HyLordServerUtil</AssemblyName>
+	<AssemblyTitle>HyLord Server Util</AssemblyTitle>
+	<ApplicationIcon>HyLord Logo 64.ico</ApplicationIcon>
+	<IsPublishable>True</IsPublishable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="HyLord Logo 64.ico" />
+  </ItemGroup>
+
+
+</Project>

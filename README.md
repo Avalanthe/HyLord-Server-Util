@@ -19,7 +19,4 @@ From here, press the Config tab to change the settings of your server and world.
 <h1>Step 5: Start Server</h1>
 Now that it's all configured, start the server with the button in the top right corner!
 <h1>Step 6: Auth</h1>
-If you've launched the server before and just adding HyLord as a layer for simplicity, nothing else is needed. The server will run as normal, but with extra monitoring.
-If this is your first launch, you'll need to follow the instructions in the Console tab. Auth is automatically set to Encrypt and save.
-Type /auth login browser and copy/paste the URL into your browser of choice. (I'll be adding a button for this in a future update)
-Once authed, press Restart to restart the server with your new auth token.
+Auth-Assist will trigger if you need to authorize your server and prompt you to open your browser. One button, no commands, no copying.

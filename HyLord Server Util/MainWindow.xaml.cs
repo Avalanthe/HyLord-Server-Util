@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -11,6 +12,7 @@ using System.Text.Json.Nodes;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -18,7 +20,7 @@ using System.Windows.Threading;
 
 namespace HyLordServerUtil
 {
-public partial class MainWindow : Window, INotifyPropertyChanged
+    public partial class MainWindow : Window, INotifyPropertyChanged
     {
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -55,11 +57,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         private DateTime? nextAutoRestartUtc;
         private volatile bool autoRestartArmed = false;
         private bool restartInProgress = false;
+        private Timer? autoRestartArmTimer;
+        private DispatcherTimer? autoRestartCountdownUi;
+        private DateTime? nextAutoRestartLocal;
+        private int countdownSecondsRemaining = 0;
+        private const int AutoRestartCountdownSeconds = 600;
+        private int lastWarnSecond = -1;
 
         private ServerConfig? worldConfig;
         private readonly string worldConfigPath = @".\universe\worlds\default\config.json";
 
-        private readonly string playersFolder = @".\universe\players";
+        private readonly string playersFolder = @".\universe\players";       
+        private readonly string permissionsPath = "permissions.json";
 
         private DispatcherTimer? performanceTimer;
 
@@ -113,6 +122,24 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
+        private readonly ObservableCollection<BackupInfo> backups = new();
+        private readonly string backupsFolder = @".\backups";
+        private readonly string universeFolder = @".\universe";
+
+        private Timer? autoBackupArmTimer;
+        private DispatcherTimer? autoBackupCountdownUi;
+        private DateTime? nextAutoBackupLocal;
+        private int backupCountdownSecondsRemaining = 0;
+
+        private const int AutoBackupCountdownSeconds = 0;
+
+
+
+
+
+
+
+
         public MainWindow()
         {
             InitializeComponent();
@@ -130,7 +157,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             BansList.ItemsSource = bans;
             LoadBans();
 
-            PlayerList.ItemsSource = players;
+            PlayerGrid.ItemsSource = players;
+            SetupPlayerSorting();
 
             sessionTickTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             sessionTickTimer.Tick += (_, _) =>
@@ -152,6 +180,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _ = LoadModsAsync();
             ModsMoveEnabled = true;
             ModsBannerVisible = false;
+
+            BackupsList.ItemsSource = backups;
+            InitAutoBackupControls();
+            LoadAutoBackupFromConfig();
+            ScheduleAutoBackup();
+            _ = LoadBackupsAsync();
+
+            server.AuthRequired += OnAuthRequired;
+            server.AuthUrlReceived += OnAuthUrlReceived;
+            server.AuthSucceeded += OnAuthSucceeded;
+
         }
 
         private async void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
@@ -262,6 +301,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             UpdatePlayerCount();
 
             SaveAutoRestartToConfig();
+            SaveAutoBackupToConfig();
             ScheduleAutoRestart();
 
         }
@@ -349,6 +389,70 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             SaveWorldConfig();
         }
+        private void SyncOpsFromPermissions()
+        {
+            try
+            {
+                if (!File.Exists(permissionsPath))
+                    return;
+
+                var json = File.ReadAllText(permissionsPath);
+                var root = JsonNode.Parse(json) as JsonObject;
+                if (root == null) return;
+
+                var users = root["users"] as JsonObject;
+                if (users == null) return;
+
+                var opByHash = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var kv in users)
+                {
+                    var hash = kv.Key;
+                    if (kv.Value is not JsonObject userObj)
+                        continue;
+
+                    var groups = userObj["groups"] as JsonArray;
+                    if (groups == null)
+                    {
+                        opByHash[hash] = false;
+                        continue;
+                    }
+
+                    bool isOp = groups.Any(g =>
+                    {
+                        try
+                        {
+                            var s = g?.GetValue<string>();
+                            return string.Equals(s, "OP", StringComparison.OrdinalIgnoreCase);
+                        }
+                        catch { return false; }
+                    });
+
+                    opByHash[hash] = isOp;
+                }
+
+                foreach (var p in players)
+                {
+                    if (string.IsNullOrWhiteSpace(p.Hash)) continue;
+
+                    if (opByHash.TryGetValue(p.Hash, out bool isOp))
+                        p.IsOp = isOp;
+                    else
+                        p.IsOp = false;
+                }
+
+                RefreshPlayerSort();
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"Failed to read permissions.json: {ex.Message}", LogType.Warning);
+            }
+        }
+
+
+
+
+
         private void InitAutoRestartControls()
         {
             CfgAutoRestartHour.Items.Clear();
@@ -443,7 +547,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             autoRestartTimer?.Dispose();
             autoRestartTimer = null;
+
+            autoRestartArmTimer?.Dispose();
+            autoRestartArmTimer = null;
+
+            autoRestartCountdownUi?.Stop();
+            autoRestartCountdownUi = null;
+
             nextAutoRestartUtc = null;
+            nextAutoRestartLocal = null;
+            countdownSecondsRemaining = 0;
             autoRestartArmed = false;
 
             if (CfgAutoRestartEnabled.IsChecked != true)
@@ -479,15 +592,50 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     nextLocal = nextLocal.AddDays(1);
             }
 
+            nextAutoRestartLocal = nextLocal;
             nextAutoRestartUtc = nextLocal.ToUniversalTime();
             autoRestartArmed = true;
 
-            CfgNextAutoRestart.Text = $"Next: {nextLocal:yyyy-MM-dd HH:mm}";
+            UpdateNextAutoRestartLabel();
 
             var due = nextAutoRestartUtc.Value - DateTime.UtcNow;
             if (due < TimeSpan.Zero) due = TimeSpan.Zero;
+            if (due.TotalSeconds <= AutoRestartCountdownSeconds)
+            {
+                StartAutoRestartCountdown((int)Math.Ceiling(due.TotalSeconds));
+                return;
+            }
+            var armDelay = due - TimeSpan.FromSeconds(AutoRestartCountdownSeconds);
+            if (armDelay < TimeSpan.Zero) armDelay = TimeSpan.Zero;
 
-            autoRestartTimer = new Timer(_ => AutoRestartTimerFired(), null, due, Timeout.InfiniteTimeSpan);
+            autoRestartArmTimer = new Timer(_ =>
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (CfgAutoRestartEnabled.IsChecked != true)
+                        return;
+
+                    StartAutoRestartCountdown(AutoRestartCountdownSeconds);
+                }));
+            }, null, armDelay, Timeout.InfiniteTimeSpan);
+        }
+
+        private void UpdateNextAutoRestartLabel()
+        {
+            if (!nextAutoRestartLocal.HasValue)
+            {
+                CfgNextAutoRestart.Text = "Next: --";
+                return;
+            }
+            if (countdownSecondsRemaining > 0)
+            {
+                var t = TimeSpan.FromSeconds(countdownSecondsRemaining);
+                CfgNextAutoRestart.Text = $"Next: {nextAutoRestartLocal.Value:yyyy-MM-dd HH:mm} (in {t:mm\\:ss})";
+            }
+            else
+            {
+                CfgNextAutoRestart.Text = $"Next: {nextAutoRestartLocal.Value:yyyy-MM-dd HH:mm}";
+            }
         }
         private void AutoRestartTimerFired()
         {
@@ -511,6 +659,75 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 ScheduleAutoRestart();
             }));
         }
+        private void StartAutoRestartCountdown(int seconds)
+        {
+            autoRestartCountdownUi?.Stop();
+
+            countdownSecondsRemaining = Math.Max(0, seconds);
+            UpdateNextAutoRestartLabel();
+
+            autoRestartCountdownUi = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(1)
+            };
+
+            autoRestartCountdownUi.Tick += async (_, _) =>
+            {
+                if (CfgAutoRestartEnabled.IsChecked != true)
+                {
+                    autoRestartCountdownUi?.Stop();
+                    countdownSecondsRemaining = 0;
+                    UpdateNextAutoRestartLabel();
+                    return;
+                }
+
+                countdownSecondsRemaining--;
+                if (countdownSecondsRemaining < 0)
+                    countdownSecondsRemaining = 0;
+
+                UpdateNextAutoRestartLabel();
+
+                TrySendRestartWarnings(countdownSecondsRemaining);
+
+                if (countdownSecondsRemaining == 0)
+                {
+                    autoRestartCountdownUi?.Stop();
+                    if (server?.IsRunning == true)
+                    {
+                        AppendLog("Auto restart countdown reached zero. Restarting server.", LogType.Warning);
+                        await RestartServerAsync();
+                    }
+                    else
+                    {
+                        AppendLog("Auto restart reached zero, but server is offline. Skipping.", LogType.Info);
+                    }
+                    ScheduleAutoRestart();
+                }
+            };
+
+            autoRestartCountdownUi.Start();
+
+            AppendLog($"Auto restart countdown started: {seconds}s", LogType.Warning);
+        }
+        private void TrySendRestartWarnings(int secondsLeft)
+        {
+            if (server?.IsRunning != true) return;
+            if (secondsLeft == lastWarnSecond) return;
+            lastWarnSecond = secondsLeft;
+            if (secondsLeft == 600 || secondsLeft == 540 || secondsLeft == 480 ||
+                secondsLeft == 420 || secondsLeft == 360 || secondsLeft == 300 ||
+                secondsLeft == 240 || secondsLeft == 180 || secondsLeft == 120 || secondsLeft == 60)
+            {
+                server.SendCommand($"say [SYSTEM MAINTENANCE] Server restarting in {secondsLeft} minutes");
+            } else if (secondsLeft == 45 || secondsLeft == 30 || secondsLeft == 15 ||
+                secondsLeft == 10 || secondsLeft == 9 || secondsLeft == 8 ||
+                secondsLeft == 7 || secondsLeft == 6 || secondsLeft == 5 ||
+                secondsLeft == 4 || secondsLeft == 3 || secondsLeft == 2 ||
+                secondsLeft == 1 || secondsLeft == 0)
+            {
+                server.SendCommand($"say [SYSTEM MAINTENANCE] Server restarting in {secondsLeft} seconds");
+            }
+        }
 
 
 
@@ -529,6 +746,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 Directory.CreateDirectory(@".\universe");
                 Directory.CreateDirectory(@".\universe\worlds");
                 Directory.CreateDirectory(@".\universe\worlds\default");
+                
+                Directory.CreateDirectory(@".\backups");
 
                 AppendLog("Verified required folders", LogType.Info);
             }
@@ -753,6 +972,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             server.ServerCrashed += OnServerCrashed;
             server.PlayerJoined += OnPlayerJoined;
             server.PlayerLeft += OnPlayerLeft;
+            server.PlayerOpChanged += OnPlayerOpChanged;
         }
 
         private void OnServerStarted()
@@ -890,72 +1110,168 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Clipboard.SetText(p.Hash);
             AppendLog($"Copied hash: {p.Hash}", LogType.Info);
         }
-        private void OnPlayerJoined(PlayerInfo player)
+        private void OnPlayerJoined(PlayerInfo incoming)
         {
-            Dispatcher.Invoke(() =>
+            Dispatcher.BeginInvoke(new Action(() =>
             {
-                var existing = players.FirstOrDefault(p =>
-                    !string.IsNullOrWhiteSpace(player.Hash) && p.Hash == player.Hash);
+                var existing = !string.IsNullOrWhiteSpace(incoming.Hash)
+                    ? players.FirstOrDefault(p => p.Hash == incoming.Hash)
+                    : players.FirstOrDefault(p => p.Name.Equals(incoming.Name, StringComparison.OrdinalIgnoreCase));
 
-                if (existing != null)
+                if (existing == null)
                 {
-                    players.Remove(existing);
-                    AppendLog($"Reconnect: {player.Name} ({player.Hash})", LogType.Warning);
+                    incoming.IsOnline = true;
+                    players.Add(incoming);
+                    sessionStore.OnJoin(incoming);
                 }
                 else
                 {
-                    var nameDup = players.FirstOrDefault(p => p.Name == player.Name);
-                    if (nameDup != null)
-                        players.Remove(nameDup);
-
-                    AppendLog($"Player joined: {player.Name} ({player.Hash})", LogType.Info);
+                    existing.Name = incoming.Name;
+                    existing.Hash = incoming.Hash;
+                    existing.JoinedAt = DateTime.Now;
+                    existing.IsOnline = true;
+                    sessionStore.OnJoin(existing);
                 }
-
-                players.Add(player);
-
-                sessionStore.OnJoin(player);
-
+                SyncOpsFromPermissions();
                 UpdatePlayerCount();
-
-                if (players.Count > sessionPeakPlayers)
-                {
-                    sessionPeakPlayers = players.Count;
-                    PerfPeakPlayers.Text = sessionPeakPlayers.ToString();
-                }
-            });
+                RefreshPlayerSort();
+            }));
         }
 
-        private void OnPlayerLeft(PlayerInfo player)
+        private void OnPlayerLeft(PlayerInfo incoming)
         {
-            Dispatcher.Invoke(() =>
+            Dispatcher.BeginInvoke(new Action(() =>
             {
                 PlayerInfo? existing = null;
 
-                if (!string.IsNullOrWhiteSpace(player.Hash))
-                    existing = players.FirstOrDefault(p => p.Hash == player.Hash);
+                if (!string.IsNullOrWhiteSpace(incoming.Hash))
+                    existing = players.FirstOrDefault(p => p.Hash == incoming.Hash);
 
-                existing ??= players.FirstOrDefault(p => p.Name == player.Name);
+                existing ??= players.FirstOrDefault(p => p.Name.Equals(incoming.Name, StringComparison.OrdinalIgnoreCase));
 
-                if (existing != null)
+                if (existing == null) return;
+
+                existing.IsOnline = false;
+                existing.LastSeenAt = DateTime.Now;
+
+                sessionStore.OnLeave(existing);
+
+                UpdatePlayerCount();
+                RefreshPlayerSort();
+            }));
+        }
+        private void OnPlayerOpChanged(string name, bool isOp)
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                var p = players.FirstOrDefault(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+                if (p == null)
                 {
-                    players.Remove(existing);
-
-                    sessionStore.OnLeave(existing);
-
-                    AppendLog($"Player left: {existing.Name} ({existing.Hash})", LogType.Info);
-                    UpdatePlayerCount();
+                    p = new PlayerInfo
+                    {
+                        Name = name,
+                        Hash = "",
+                        IsOnline = false,
+                        IsOp = isOp
+                    };
+                    players.Add(p);
                 }
                 else
                 {
-                    AppendLog($"Disconnect for unknown player: {player.Name} ({player.Hash})", LogType.Warning);
+                    p.IsOp = isOp;
+                    SyncOpsFromPermissions();
                 }
-            });
+
+                AppendLog(isOp ? $"{name} marked as operator." : $"{name} unmarked as operator.", LogType.Info);
+
+                RefreshPlayerSort();
+            }));
         }
 
         private void UpdatePlayerCount()
         {
-            PlayerCountText.Text = $"Players: {players.Count} / {maxPlayers}";
+            int online = players.Count(p => p.IsOnline);
+
+            PlayerCountText.Text = $"Players: {online} / {maxPlayers}";
+
+            if (online > sessionPeakPlayers)
+            {
+                sessionPeakPlayers = online;
+                PerfPeakPlayers.Text = $"{sessionPeakPlayers}";
+            }
         }
+        private void SetupPlayerSorting()
+        {
+            var view = (ListCollectionView)CollectionViewSource.GetDefaultView(players);
+            view.CustomSort = new PlayerComparer();
+        }
+
+        private sealed class PlayerComparer : IComparer
+        {
+            public int Compare(object? x, object? y)
+            {
+                var a = x as PlayerInfo;
+                var b = y as PlayerInfo;
+                if (a == null || b == null) return 0;
+                /*  0 = Online Op
+                    1 = Online
+                    2 = Offline Op
+                    3 = Offline*/
+                int ra = Rank(a);
+                int rb = Rank(b);
+                int r = ra.CompareTo(rb);
+                if (r != 0) return r;
+
+                return string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
+            }
+
+            private static int Rank(PlayerInfo p)
+            {
+                if (p.IsOnline && p.IsOp) return 0;
+                if (p.IsOnline && !p.IsOp) return 1;
+                if (!p.IsOnline && p.IsOp) return 2;
+                return 3;
+            }
+        }
+        private void RefreshPlayerSort()
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                CollectionViewSource.GetDefaultView(players)?.Refresh();
+            }));
+        }
+        private void OpToggle_Click(object sender, RoutedEventArgs e)
+        {
+            var p = GetPlayerFromSender(sender);
+            if (p == null) return;
+
+            if (server?.IsRunning != true)
+            {
+                AppendLog("Server is offline; cannot op/deop.", LogType.Warning);
+                return;
+            }
+
+            if (p.IsOp)
+            {
+                server.SendCommand($"op remove {p.Name}");
+                AppendLog($"Deop issued: {p.Name}", LogType.Warning);
+                p.IsOp = false;
+            }
+            else
+            {
+                server.SendCommand($"op add {p.Name}");
+                AppendLog($"Op issued: {p.Name}", LogType.Warning);
+                p.IsOp = true;
+            }
+
+            RefreshPlayerSort();
+        }
+
+
+
+
+
+
 
 
         private void SetupPerformanceTimer()
@@ -1373,7 +1689,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 {
                     loadedMods.Clear();
                     foreach (var m in results.loaded.OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase))
+                    {
+                        TryAttachModConfig(m);
                         loadedMods.Add(m);
+                    }
+                        
+
 
                     unloadedMods.Clear();
                     foreach (var m in results.unloaded.OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase))
@@ -1436,6 +1757,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 using var doc = JsonDocument.Parse(jsonText);
                 var root = doc.RootElement;
 
+                if (root.TryGetProperty("Group", out var g)) info.Group = g.ToString();
                 if (root.TryGetProperty("Name", out var n)) info.Name = n.ToString();
                 if (root.TryGetProperty("Version", out var v)) info.Version = v.ToString();
                 if (root.TryGetProperty("Description", out var d)) info.Description = d.ToString();
@@ -1458,6 +1780,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 return info;
             }
         }
+        private void TryAttachModConfig(ModInfo mod)
+        {
+            mod.ConfigPath = "";
+
+            if (string.IsNullOrWhiteSpace(mod.Group) || string.IsNullOrWhiteSpace(mod.Name))
+                return;
+
+            var folderName = $"{mod.Group}_{mod.Name}";
+            var folderPath = Path.Combine(modsFolder, folderName);
+
+            if (!Directory.Exists(folderPath))
+                return;
+
+            var candidate1 = Path.Combine(folderPath, "config.json");
+            var candidate2 = Path.Combine(folderPath, $"{mod.Name}.json");
+
+            if (File.Exists(candidate1)) mod.ConfigPath = candidate1;
+            else if (File.Exists(candidate2)) mod.ConfigPath = candidate2;
+        }
+
         private async void ModAction_Click(object sender, RoutedEventArgs e)
         {
             if (server?.IsRunning == true)
@@ -1493,6 +1835,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 AppendLog($"Failed to move mod: {ex.Message}", LogType.Error);
             }
+        }
+        private void ModConfig_Click(object sender, RoutedEventArgs e)
+        {
+            if (server?.IsRunning == true)
+            {
+                AppendLog("Stop the server before editing mod configs (files may be locked).", LogType.Warning);
+                return;
+            }
+
+            if ((sender as FrameworkElement)?.DataContext is not ModInfo mod) return;
+            if (!mod.HasConfig) return;
+
+            var win = new ModConfigEditorWindow(mod.Name, mod.ConfigPath) { Owner = this };
+            win.ShowDialog();
         }
 
         private void RefreshMods_Click(object sender, RoutedEventArgs e)
@@ -1683,6 +2039,513 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 return "(unknown)";
             }
         }
+
+
+
+
+
+
+        private void InitAutoBackupControls()
+        {
+            CfgAutoBackupHour.Items.Clear();
+            for (int h = 0; h < 24; h++)
+                CfgAutoBackupHour.Items.Add(h.ToString("00"));
+
+            CfgAutoBackupMinute.Items.Clear();
+            for (int m = 0; m < 60; m += 5)
+                CfgAutoBackupMinute.Items.Add(m.ToString("00"));
+
+            CfgAutoBackupHour.SelectedItem = "03";
+            CfgAutoBackupMinute.SelectedItem = "00";
+            CfgAutoBackupEnabled.IsChecked = false;
+        }
+        private async Task LoadBackupsAsync()
+        {
+            try
+            {
+                Directory.CreateDirectory(backupsFolder);
+
+                var files = Directory.EnumerateFiles(backupsFolder, "*.zip", SearchOption.TopDirectoryOnly)
+                    .Select(p => new FileInfo(p))
+                    .OrderByDescending(fi => fi.CreationTimeUtc)
+                    .ToList();
+
+                var list = await Task.Run(() =>
+                {
+                    var tmp = new List<BackupInfo>();
+                    foreach (var fi in files)
+                    {
+                        tmp.Add(new BackupInfo
+                        {
+                            FullPath = fi.FullName,
+                            FileName = fi.Name,
+                            CreatedLocal = fi.CreationTime,
+                            SizeBytes = fi.Length
+                        });
+                    }
+                    return tmp;
+                });
+
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    backups.Clear();
+                    foreach (var b in list)
+                        backups.Add(b);
+                }));
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"Failed to load backups: {ex.Message}", LogType.Error);
+            }
+        }
+        private void RefreshBackups_Click(object sender, RoutedEventArgs e)
+        {
+            _ = LoadBackupsAsync();
+        }
+
+        private void OpenBackupsFolder_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Directory.CreateDirectory(backupsFolder);
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = Path.GetFullPath(backupsFolder),
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"Failed to open backups folder: {ex.Message}", LogType.Error);
+            }
+        }
+
+        private void BackupNow_Click(object sender, RoutedEventArgs e)
+        {
+            if (server?.IsRunning == true)
+            {
+                server.SendCommand("backup");
+                AppendLog("Backup command sent.", LogType.Info);
+            }
+            else
+            {
+                AppendLog("Server is offline; cannot run backup command.", LogType.Warning);
+            }
+        }
+        private async void RestoreBackup_Click(object sender, RoutedEventArgs e)
+        {
+            if ((sender as FrameworkElement)?.DataContext is not BackupInfo backup)
+                return;
+
+            var confirm = MessageBox.Show(
+                $"Restore this backup?\n\n{backup.FileName}\n\nThis will overwrite the current universe folder.",
+                "Confirm Restore",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+
+            if (confirm != MessageBoxResult.Yes)
+                return;
+
+            bool wasRunning = (server?.IsRunning == true);
+
+            try
+            {
+                Directory.CreateDirectory(backupsFolder);
+
+                AppendLog("Restore: creating manual backup...", LogType.Warning);
+                var manualZip = await CreateManualBackupZipAsync();
+                AppendLog($"Restore: manual backup created: {Path.GetFileName(manualZip)}", LogType.Info);
+
+                if (wasRunning)
+                {
+                    AppendLog("Restore: stopping server...", LogType.Warning);
+                    await StopServerGracefullyAsync();
+                }
+
+                AppendLog($"Restore: restoring universe from {backup.FileName} ...", LogType.Warning);
+                await RestoreUniverseFromBackupAsync(backup.FullPath);
+                AppendLog("Restore: universe restored.", LogType.Info);
+
+                if (wasRunning)
+                {
+                    AppendLog("Restore: starting server...", LogType.Warning);
+                    TopStart_Click(this, new RoutedEventArgs());
+                    AppendLog("Restore: server start issued.", LogType.Info);
+                }
+
+                await LoadBackupsAsync();
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"Restore failed: {ex.Message}", LogType.Error);
+            }
+        }
+        private async Task StopServerGracefullyAsync()
+        {
+            if (server?.Process == null || server.Process.HasExited)
+                return;
+
+            try { server.SendCommand("stop"); } catch { }
+
+            const int timeoutMs = 15000;
+
+            bool exited = await Task.Run(() =>
+            {
+                try { return server.Process.WaitForExit(timeoutMs); }
+                catch { return true; }
+            });
+
+            if (!exited)
+            {
+                AppendLog("Stop timed out; forcing termination.", LogType.Error);
+                try { server.Process.Kill(entireProcessTree: true); } catch { }
+            }
+        }
+        private async Task<string> CreateManualBackupZipAsync()
+        {
+            Directory.CreateDirectory(backupsFolder);
+
+            var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            var manualName = $"ManualBackup_{stamp}.zip";
+            var manualPath = Path.Combine(backupsFolder, manualName);
+
+            if (File.Exists(manualPath))
+                manualPath = Path.Combine(backupsFolder, $"ManualBackup_{stamp}_{Guid.NewGuid():N}.zip");
+
+            if (server?.IsRunning == true)
+            {
+                var before = Directory.EnumerateFiles(backupsFolder, "*.zip")
+                    .Select(p => new FileInfo(p))
+                    .OrderByDescending(fi => fi.CreationTimeUtc)
+                    .FirstOrDefault()?.CreationTimeUtc ?? DateTime.MinValue;
+
+                server.SendCommand("backup");
+
+                var deadline = DateTime.UtcNow.AddSeconds(60);
+                FileInfo? newest = null;
+
+                while (DateTime.UtcNow < deadline)
+                {
+                    await Task.Delay(500);
+
+                    newest = Directory.EnumerateFiles(backupsFolder, "*.zip")
+                        .Select(p => new FileInfo(p))
+                        .OrderByDescending(fi => fi.CreationTimeUtc)
+                        .FirstOrDefault();
+
+                    if (newest == null) continue;
+                    if (newest.CreationTimeUtc <= before) { newest = null; continue; }
+
+                    long size1 = newest.Length;
+                    await Task.Delay(500);
+                    newest.Refresh();
+                    long size2 = newest.Length;
+
+                    if (size2 > 0 && size2 == size1)
+                        break;
+
+                    newest = null;
+                }
+
+                if (newest == null)
+                    throw new Exception("Manual backup zip did not appear after sending backup command.");
+
+                File.Move(newest.FullName, manualPath);
+                return manualPath;
+            }
+
+            if (!Directory.Exists(universeFolder))
+                throw new Exception($"Universe folder not found: {universeFolder}");
+
+            await Task.Run(() =>
+            {
+                using var zip = ZipFile.Open(manualPath, ZipArchiveMode.Create);
+
+                AddDirectoryToZip(zip, universeFolder, zipRootPrefix: "universe");
+            });
+
+            return manualPath;
+        }
+
+        private static void AddDirectoryToZip(ZipArchive zip, string sourceDir, string zipRootPrefix)
+        {
+            foreach (var file in Directory.EnumerateFiles(sourceDir, "*", SearchOption.AllDirectories))
+            {
+                var rel = Path.GetRelativePath(sourceDir, file).Replace("\\", "/");
+                var entryName = $"{zipRootPrefix}/{rel}";
+                zip.CreateEntryFromFile(file, entryName, CompressionLevel.Optimal);
+            }
+        }
+        private async Task RestoreUniverseFromBackupAsync(string zipPath)
+        {
+            if (!File.Exists(zipPath))
+                throw new FileNotFoundException("Backup zip not found.", zipPath);
+
+            var tempRoot = Path.Combine(Path.GetTempPath(), "HyLordServerUtil_Restore_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempRoot);
+
+            try
+            {
+                await Task.Run(() => ZipFile.ExtractToDirectory(zipPath, tempRoot));
+
+                var extractedUniverse = Path.Combine(tempRoot, "universe");
+                if (!Directory.Exists(extractedUniverse))
+                {
+                    extractedUniverse = tempRoot;
+                }
+
+                if (Directory.Exists(universeFolder))
+                {
+                    await Task.Run(() => Directory.Delete(universeFolder, recursive: true));
+                }
+
+                await Task.Run(() => CopyDirectory(extractedUniverse, universeFolder));
+            }
+            finally
+            {
+                try { Directory.Delete(tempRoot, true); } catch { }
+            }
+        }
+
+        private static void CopyDirectory(string sourceDir, string destDir)
+        {
+            Directory.CreateDirectory(destDir);
+
+            foreach (var file in Directory.GetFiles(sourceDir))
+            {
+                var name = Path.GetFileName(file);
+                File.Copy(file, Path.Combine(destDir, name), overwrite: true);
+            }
+
+            foreach (var dir in Directory.GetDirectories(sourceDir))
+            {
+                var name = Path.GetFileName(dir);
+                CopyDirectory(dir, Path.Combine(destDir, name));
+            }
+        }
+        private void AutoBackup_Changed(object sender, RoutedEventArgs e)
+        {
+            ScheduleAutoBackup();
+        }
+        private void ScheduleAutoBackup()
+        {
+            autoBackupArmTimer?.Dispose();
+            autoBackupArmTimer = null;
+            nextAutoBackupLocal = null;
+
+            if (CfgAutoBackupEnabled.IsChecked != true)
+            {
+                CfgNextAutoBackup.Text = "Next: --";
+                return;
+            }
+
+            int hh = int.TryParse(CfgAutoBackupHour.SelectedItem?.ToString(), out var h) ? h : 3;
+            int mm = int.TryParse(CfgAutoBackupMinute.SelectedItem?.ToString(), out var m) ? m : 0;
+
+            var now = DateTime.Now;
+            var next = new DateTime(now.Year, now.Month, now.Day, hh, mm, 0);
+            if (next <= now) next = next.AddDays(1);
+
+            nextAutoBackupLocal = next;
+            CfgNextAutoBackup.Text = $"Next: {next:yyyy-MM-dd HH:mm}";
+
+            var due = next.ToUniversalTime() - DateTime.UtcNow;
+            if (due < TimeSpan.Zero) due = TimeSpan.Zero;
+
+            autoBackupArmTimer = new Timer(_ =>
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (CfgAutoBackupEnabled.IsChecked != true) return;
+
+                    if (server?.IsRunning == true)
+                    {
+                        server.SendCommand("backup");
+                        AppendLog("Auto backup triggered (backup command sent).", LogType.Warning);
+
+                        _ = Task.Run(async () =>
+                        {
+                            await Task.Delay(1500);
+                            await LoadBackupsAsync();
+                        });
+                    }
+                    else
+                    {
+                        AppendLog("Auto backup time reached, but server is offline. Skipping.", LogType.Info);
+                    }
+
+                    ScheduleAutoBackup();
+                }));
+            }, null, due, Timeout.InfiniteTimeSpan);
+        }
+
+        private void LoadAutoBackupFromConfig()
+        {
+            if (config == null) return;
+
+            var node = config.GetNode("AutoBackup") as System.Text.Json.Nodes.JsonObject;
+            bool enabled = node?["Enabled"]?.GetValue<bool>() ?? false;
+            string time = node?["Time"]?.GetValue<string>() ?? "03:00";
+
+            CfgAutoBackupEnabled.IsChecked = enabled;
+
+            var parts = time.Split(':');
+            var hh = (parts.Length > 0) ? parts[0].PadLeft(2, '0') : "03";
+            var mm = (parts.Length > 1) ? parts[1].PadLeft(2, '0') : "00";
+
+            if (CfgAutoBackupHour.Items.Contains(hh)) CfgAutoBackupHour.SelectedItem = hh;
+            if (CfgAutoBackupMinute.Items.Contains(mm)) CfgAutoBackupMinute.SelectedItem = mm;
+        }
+
+        private void SaveAutoBackupToConfig()
+        {
+            if (config == null) return;
+
+            var enabled = CfgAutoBackupEnabled.IsChecked == true;
+            var hh = CfgAutoBackupHour.SelectedItem?.ToString() ?? "03";
+            var mm = CfgAutoBackupMinute.SelectedItem?.ToString() ?? "00";
+
+            var ar = new System.Text.Json.Nodes.JsonObject
+            {
+                ["Enabled"] = enabled,
+                ["Time"] = $"{hh}:{mm}"
+            };
+
+            config.SetNode("AutoBackup", ar);
+        }
+
+
+
+
+
+
+
+
+
+        private bool authBannerVisible;
+        public bool AuthBannerVisible
+        {
+            get => authBannerVisible;
+            set
+            {
+                if (authBannerVisible == value) return;
+                authBannerVisible = value;
+                PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(AuthBannerVisible)));
+            }
+        }
+                private string authUrl = "";
+        public string AuthUrl
+        {
+            get => authUrl;
+            set
+            {
+                if (authUrl == value) return;
+                authUrl = value;
+                PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(AuthUrl)));
+                PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(AuthBannerText)));
+            }
+        }
+
+        public string AuthBannerText =>
+            string.IsNullOrWhiteSpace(AuthUrl)
+                ? "Waiting for login URL..."
+                : "Open the login URL in your browser to authenticate this server session.";
+        private void AuthOpen_Click(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrWhiteSpace(AuthUrl))
+                return;
+
+            if (TryOpenUrl(AuthUrl))
+            {
+                //AuthBannerVisible = false;
+                AppendLog("Opened auth URL in browser.", LogType.Info);
+            }
+        }
+
+        private void AuthCopy_Click(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrWhiteSpace(AuthUrl))
+                return;
+
+            try
+            {
+                Clipboard.SetText(AuthUrl);
+                AppendLog("Auth URL copied to clipboard.", LogType.Info);
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"Failed to copy auth URL: {ex.Message}", LogType.Error);
+            }
+            //AuthBannerVisible = false;
+        }
+
+        private void AuthDismiss_Click(object sender, RoutedEventArgs e)
+        {
+            AuthBannerVisible = false;
+        }
+
+        private void OnAuthRequired()
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                AuthUrl = "";
+                AuthBannerVisible = true;
+
+                AppendLog("Auth required: requesting browser login...", LogType.Warning);
+            }));
+        }
+
+        private void OnAuthUrlReceived(string url)
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (AuthUrl == url && AuthBannerVisible)
+                    return;
+
+                AuthUrl = url;
+                AuthBannerVisible = true;
+
+                AppendLog("Auth URL received. Use the banner to open/copy it.", LogType.Info);
+            }));
+        }
+        private void OnAuthSucceeded()
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                AuthBannerVisible = false;
+                AuthUrl = "";
+
+                AppendLog("Authentication successful.", LogType.Info);
+            }));
+        }
+
+
+        private bool TryOpenUrl(string url)
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = url,
+                    UseShellExecute = true
+                });
+                return true;
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"Failed to open URL: {ex.Message}", LogType.Error);
+
+                try
+                {
+                    Clipboard.SetText(url);
+                    AppendLog("Auth URL copied to clipboard.", LogType.Info);
+                }
+                catch { }
+
+                return false;
+            }
+        }
+
 
 
 

@@ -9,7 +9,7 @@
     <UseWPF>true</UseWPF>
 	<CetCompat>false</CetCompat>
 	<AssemblyName>HyLordServerUtil</AssemblyName>
-	<AssemblyTitle>HyLord Server Util</AssemblyTitle>
+	<AssemblyTitle>HyLordServerUtil</AssemblyTitle>
 	<ApplicationIcon>HyLord Logo 64.ico</ApplicationIcon>
 	<IsPublishable>True</IsPublishable>
   </PropertyGroup>

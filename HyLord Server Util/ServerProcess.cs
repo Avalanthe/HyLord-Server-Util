@@ -2,6 +2,8 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using System.Windows.Shapes;
+using System.Linq;
 
 namespace HyLordServerUtil
 {
@@ -20,10 +22,17 @@ namespace HyLordServerUtil
         public event Action ServerStarted;
         public event Action ServerStopped;
         public event Action ServerCrashed;
+        public event Action? ServerBooted;
 
         public event Action<PlayerInfo> PlayerJoined;
         public event Action<PlayerInfo> PlayerLeft;
         public event Action<PlayerInfo>? PlayerRejected;
+        public event Action<string, bool>? PlayerOpChanged;
+
+        public event Action? AuthRequired;
+        public event Action<string>? AuthUrlReceived;
+        public event Action? AuthSucceeded;
+
         public bool IsRunning
         {
             get
@@ -43,7 +52,7 @@ namespace HyLordServerUtil
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = "java",
-                    Arguments = $"-jar HytaleServer.jar --assets Assets.zip --bind 0.0.0.0:{NetworkPort}",
+                    Arguments = $"-jar HytaleServer.jar --assets Assets.zip --bind 0.0.0.0:{NetworkPort} --backup-dir backups",
                     WorkingDirectory = ServerDirectory,
                     RedirectStandardInput = true,
                     RedirectStandardOutput = true,
@@ -83,6 +92,7 @@ namespace HyLordServerUtil
             {
                 try { process.Kill(); } catch { }
             }
+            ResetAuthState();
         }
 
         public async void Restart()
@@ -103,6 +113,7 @@ namespace HyLordServerUtil
                 }
             }
 
+            ResetAuthState();
             intentionalStop = false;
             await Task.Delay(750);
             Start();
@@ -141,6 +152,10 @@ namespace HyLordServerUtil
                 ServerCrashed?.Invoke();
         }
 
+
+
+
+
         private readonly Regex joinRegex =
             new(@"Mutual authentication complete for\s+(?<name>[^\s]+)\s+\((?<hash>[^)]+)\)",
                 RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -148,10 +163,51 @@ namespace HyLordServerUtil
         private readonly Regex leaveRegex =
             new(@"Checking objectives for disconnecting player\s+(?<name>[^\s]+)\s+\((?<hash>[^)]+)\)",
                 RegexOptions.IgnoreCase | RegexOptions.Compiled);
-        
+
         private readonly Regex bannedClosedRegex =
             new(@"\{\s*Setup\(null\s*\(null,\s*streamId=\d+\)\),\s*(?<name>[^,]+),\s*(?<hash>[^,]+),\s*SECURE\s*\}\s*was\s+closed\.",
                 RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        private readonly Regex opAddedRegex =
+            new(@"^(?<name>.+?)\s+is\s+now\s+an\s+operator!$",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private readonly Regex opRemovedRegex =
+            new(@"^(?<name>.+?)\s+is\s+no\s+longer\s+an\s+operator\.$",
+                RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+
+
+
+
+        private bool sawBooted = false;
+        private bool authRequested = false;
+
+        private readonly Regex bootedRegex =
+            new(@"Hytale Server Booted!", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private readonly Regex tokensMissingRegex =
+            new(@"No server tokens configured\. Use /auth login to authenticate\.", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private readonly Regex authUrlRegex =
+            new(@"https://oauth\.accounts\.hytale\.com/oauth2/auth\?[^\s]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly Regex ansiRegex =
+            new(@"\x1B\[[0-?]*[ -/]*[@-~]", RegexOptions.Compiled);
+
+        private readonly Regex authSuccessRegex =
+            new(@"Authentication successful!\s*Mode:\s*OAUTH_BROWSER", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+
+        private static string CleanConsoleJunk(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return s;
+            s = ansiRegex.Replace(s, "");
+            s = new string(s.Where(c => !char.IsControl(c) || c == '\r' || c == '\n' || c == '\t').ToArray());
+            return s.Trim();
+        }
+
+
 
         private void ParsePlayerEvents(string line)
         {
@@ -188,7 +244,86 @@ namespace HyLordServerUtil
                 });
                 return;
             }
+
+            var add = opAddedRegex.Match(line);
+            if (add.Success)
+            {
+                var name = add.Groups["name"].Value.Trim();
+                PlayerOpChanged?.Invoke(name, true);
+                return;
+            }
+
+            var rem = opRemovedRegex.Match(line);
+            if (rem.Success)
+            {
+                var name = rem.Groups["name"].Value.Trim();
+                PlayerOpChanged?.Invoke(name, false);
+                return;
+            }
+            ParseAuthFlow(line);
+
+
+
+
         }
+
+
+
+        private void ParseAuthFlow(string line)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+                return;
+
+            var clean = CleanConsoleJunk(line);
+
+            if (authSuccessRegex.IsMatch(clean))
+            {
+                AuthSucceeded?.Invoke();
+
+                authRequested = false;
+                sawBooted = false;
+
+                return;
+            }
+
+            if (!sawBooted && bootedRegex.IsMatch(clean))
+            {
+                sawBooted = true;
+                authRequested = false;
+                return;
+            }
+
+            if (sawBooted && !authRequested && tokensMissingRegex.IsMatch(clean))
+            {
+                authRequested = true;
+                AuthRequired?.Invoke();
+
+                SendCommand("/auth login browser");
+                return;
+            }
+
+            var m = authUrlRegex.Match(clean);
+            if (m.Success)
+            {
+                var url = CleanConsoleJunk(m.Value);
+
+                if (Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+                    uri.Scheme == Uri.UriSchemeHttps &&
+                    uri.Host.Equals("oauth.accounts.hytale.com", StringComparison.OrdinalIgnoreCase))
+                {
+                    AuthUrlReceived?.Invoke(url);
+                }
+            }
+        }
+
+        private void ResetAuthState()
+        {
+            sawBooted = false;
+            authRequested = false;
+        }
+
+
+
 
 
 

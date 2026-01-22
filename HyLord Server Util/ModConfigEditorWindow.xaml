@@ -1,0 +1,162 @@
+﻿<Window x:Class="HyLordServerUtil.ModConfigEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:HyLordServerUtil"
+        Title="Mod Config"
+        Width="900"
+        Height="650"
+        WindowStartupLocation="CenterOwner"
+        Background="#14161A"
+        FontFamily="Consolas">
+
+    <Window.Resources>
+        <local:ConfigValueTemplateSelector x:Key="ConfigValueTemplateSelector"/>
+
+        <!-- BOOL -->
+        <DataTemplate x:Key="BoolTemplate">
+            <CheckBox IsChecked="{Binding BoolValue, Mode=TwoWay}" VerticalAlignment="Center"/>
+        </DataTemplate>
+
+        <!-- NUMBER -->
+        <DataTemplate x:Key="NumberTemplate">
+            <TextBox Text="{Binding ValueText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="220" PreviewTextInput="Number_PreviewTextInput" ToolTip="Numbers only (supports negatives and decimals)."/>
+        </DataTemplate>
+
+        <!-- STRING -->
+        <DataTemplate x:Key="StringTemplate">
+            <TextBox Text="{Binding ValueText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="420"/>
+        </DataTemplate>
+
+        <!-- MULTILINE STRING -->
+        <DataTemplate x:Key="MultilineStringTemplate">
+            <TextBox Text="{Binding ValueText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="420" Height="90" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto"/>
+        </DataTemplate>
+
+        <DataTemplate x:Key="JsonTemplate">
+            <StackPanel>
+                <TextBox Text="{Binding ValueText}" IsReadOnly="True" Width="420" Height="90" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
+                <Button Content="Edit Raw..." Width="110" Margin="0,6,0,0" Click="EditRawJson_Click"/>
+            </StackPanel>
+        </DataTemplate>
+    </Window.Resources>
+
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Row="0" Margin="0,0,0,10">
+            <StackPanel>
+                <TextBlock x:Name="TitleText" FontSize="18" FontWeight="Bold" Foreground="#E6E6E6"/>
+                <TextBlock x:Name="PathText" Foreground="#777" FontSize="12"/>
+            </StackPanel>
+
+            <TextBlock x:Name="DirtyText" DockPanel.Dock="Right" Foreground="#FFCC66" FontSize="12" VerticalAlignment="Bottom" Text="" Margin="12,0,0,0"/>
+        </DockPanel>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="260"/>
+                <ColumnDefinition Width="12"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Background="#0E1013" CornerRadius="6" Padding="8" BorderBrush="#2A2E35" BorderThickness="1">
+                <StackPanel>
+                    <TextBlock Text="Groups" Foreground="#AAA" Margin="0,0,0,8"/>
+                    <ListBox x:Name="GroupList" Background="#0E1013" Foreground="#FFFFFF" BorderThickness="0" DisplayMemberPath="Name" SelectionChanged="GroupList_SelectionChanged"/>
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="1"/>
+
+            <Border Grid.Column="2" Background="#0E1013" CornerRadius="6" Padding="10" BorderBrush="#2A2E35" BorderThickness="1">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <DockPanel Grid.Row="0" Margin="0,0,0,10">
+                        <TextBlock Text="Settings" Foreground="#AAA" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+
+                        <Grid Width="320" Margin="12,0,0,0" VerticalAlignment="Center">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="34"/>
+                            </Grid.ColumnDefinitions>
+
+                            <TextBox x:Name="SearchBox" Grid.Column="0" Background="#14161A" Foreground="#FFFFFF" BorderBrush="#2A2E35" BorderThickness="1" Padding="8,6" TextChanged="SearchBox_TextChanged" ToolTip="Search (e.g., 'pvp', 'rate', 'spawn')"/>
+
+                            <Button x:Name="SearchClearButton" Grid.Column="1" Content="✕" FontSize="14" Background="#14161A" Foreground="#AAA" BorderBrush="#2A2E35" BorderThickness="1" Click="SearchClear_Click" ToolTip="Clear search"/>
+                        </Grid>
+                    </DockPanel>
+
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+
+                        <Grid>
+                            <ItemsControl x:Name="ParentEntryList" Visibility="Collapsed">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Expander Header="{Binding Name}" IsExpanded="{Binding IsExpanded}" Margin="0,0,0,10" Foreground="#FFFFFF">
+                                            <ItemsControl ItemsSource="{Binding Entries}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Grid Margin="0,0,0,10">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="240"/>
+                                                                <ColumnDefinition Width="*"/>
+                                                            </Grid.ColumnDefinitions>
+
+                                                            <StackPanel Grid.Column="0">
+                                                                <TextBlock Foreground="#E6E6E6" FontWeight="Bold" local:TextHighlighter.Text="{Binding Key}" local:TextHighlighter.Highlight="{Binding ElementName=SearchBox, Path=Text}"/>
+                                                                <TextBlock Foreground="#666" FontSize="11" TextTrimming="CharacterEllipsis" local:TextHighlighter.Text="{Binding Path}" local:TextHighlighter.Highlight="{Binding ElementName=SearchBox, Path=Text}"/>
+                                                                <TextBlock Text="{Binding TypeName}" Foreground="#888" FontSize="11"/>
+                                                            </StackPanel>
+
+                                                            <ContentControl Grid.Column="1" Content="{Binding}" ContentTemplateSelector="{StaticResource ConfigValueTemplateSelector}"/>
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </Expander>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <ItemsControl x:Name="FlatEntryList" Visibility="Collapsed">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,0,0,10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="240"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Foreground="#E6E6E6" FontWeight="Bold" local:TextHighlighter.Text="{Binding Key}" local:TextHighlighter.Highlight="{Binding ElementName=SearchBox, Path=Text}"/>
+                                                <TextBlock Foreground="#666" FontSize="11" TextTrimming="CharacterEllipsis" local:TextHighlighter.Text="{Binding Path}" local:TextHighlighter.Highlight="{Binding ElementName=SearchBox, Path=Text}"/>
+                                                <TextBlock Text="{Binding TypeName}" Foreground="#888" FontSize="11"/>
+                                            </StackPanel>
+                                            
+                                            <ContentControl Grid.Column="1" Content="{Binding}" ContentTemplateSelector="{StaticResource ConfigValueTemplateSelector}"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Grid>
+
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button Content="Reload" Width="90" Margin="0,0,8,0" Click="Reload_Click"/>
+            <Button Content="Cancel" Width="90" Margin="0,0,8,0" Click="Cancel_Click"/>
+            <Button Content="Save" Width="90" Click="Save_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>

@@ -1,4 +1,6 @@
-﻿namespace HyLordServerUtil
+﻿using System.IO;
+
+namespace HyLordServerUtil
 {
     public class ModInfo
     {
@@ -10,6 +12,9 @@
 
         public string FullPath { get; set; } = "";
         public bool IsLoaded { get; set; } = true;
+        public string Group { get; set; } = "";
+        public string ConfigPath { get; set; } = "";
+        public bool HasConfig => !string.IsNullOrWhiteSpace(ConfigPath) && File.Exists(ConfigPath);
 
         public string ActionLabel => IsLoaded ? "Unload" : "Load";
     }

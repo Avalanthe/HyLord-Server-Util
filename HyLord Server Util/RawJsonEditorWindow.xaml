@@ -1,0 +1,27 @@
+﻿<Window x:Class="HyLordServerUtil.RawJsonEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Edit JSON"
+        Width="720"
+        Height="520"
+        WindowStartupLocation="CenterOwner"
+        Background="#14161A"
+        FontFamily="Consolas">
+
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock x:Name="Header" Foreground="#E6E6E6" FontSize="16" FontWeight="Bold" Margin="0,0,0,10"/>
+
+        <TextBox x:Name="JsonBox" Grid.Row="1" Background="#0E1013" Foreground="#FFFFFF" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto"/>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+            <Button Content="Cancel" Width="90" Margin="0,0,8,0" Click="Cancel_Click"/>
+            <Button Content="OK" Width="90" Click="Ok_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>

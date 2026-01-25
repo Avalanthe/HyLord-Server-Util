@@ -1,10 +1,51 @@
 Welcome to HyLord Server Util.
 
-@HyLordly on X: https://x.com/HyLordly
-and Discord for Feature Requests and Bug Reports: https://discord.gg/3jvX6M3n
+@HyLordly on X: https://x.com/HyLordly  
+Discord for Feature Requests and Bug Reports: https://discord.gg/3jvX6M3n
 
-Simplest of setups:
+Feature List:
+# Working Features as of Beta V0.4
+- Start, Stop, Restart server
+- Auto-Restart server from crash
+- Auto-Backup with manual backup and easy restore.
+### Performance Metrics
+- CPU/MEM usage with graphs
+- Server Uptime timer
+- Current and peak player counts
+### Server Config editor
+- server name
+- MOTD
+- Password
+- max players
+- view radius
+- server port
+- Auto Restart - Daily at a set time, or Weekly at a set day and time
+### World (universe) config
+(Only affects Default world for now)
+- PVP Enabled
+- Fall Damage Enabled
+- Spawning NPC
+- Spawn Markers Enabled
+- Compass Updating
+- Objective Markers Enabled
+- Saving Players
+- Saving Chunks
+- Save New Chunks
+- Unloading Chunks
+### Player Manager
+- Live player list - Shows all online players and offline players who have connected since opening HyLord
+  - Kick/Ban/Op/Deop
+  - Copy Name and Copy Hash
+- Ban List with unban buttons
+### Mod Management
+- View list of loaded and unloaded mods
+- Quick Load/Unload buttons to test, add, or remove mods (requires server restart)
+- Mod Config menu that lets you quickly edit the json file with a searchable list.
 
+
+
+
+# Simplest of setups:
 <h1>Step 1: Download</h1>
 Go to the latest Release
 <h1>Step 2: Copy</h1>

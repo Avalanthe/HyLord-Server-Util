@@ -70,7 +70,23 @@ namespace HyLordServerUtil
         private readonly string playersFolder = @".\universe\players";       
         private readonly string permissionsPath = "permissions.json";
 
+
+        public enum ServerStatus
+        {
+            Offline,
+            Starting,
+            Online,
+            Crashed
+        }
+        private ServerStatus serverStatus = ServerStatus.Offline;
+
+
         private DispatcherTimer? performanceTimer;
+        private readonly TimeSpan perfWarmup = TimeSpan.FromSeconds(30);
+        private DateTime perfStartUtc = DateTime.MinValue;
+        private bool IsPerfWarmup =>
+            perfStartUtc != DateTime.MinValue &&
+            (DateTime.UtcNow - perfStartUtc) < perfWarmup;
 
         private TimeSpan lastCpuTime;
         private DateTime lastCpuCheck;
@@ -143,6 +159,7 @@ namespace HyLordServerUtil
         public MainWindow()
         {
             InitializeComponent();
+            UpdateServerStatusUI();
             DataContext = this;
 
             EnsureFoldersExist();
@@ -968,6 +985,7 @@ namespace HyLordServerUtil
         {
             server.OutputReceived += OnServerOutput;
             server.ServerStarted += OnServerStarted;
+            server.ServerBooted += OnServerBooted;
             server.ServerStopped += OnServerStopped;
             server.ServerCrashed += OnServerCrashed;
             server.PlayerJoined += OnPlayerJoined;
@@ -982,8 +1000,10 @@ namespace HyLordServerUtil
                 ModsMoveEnabled = false;
                 ModsBannerVisible = true;
                 BansBannerVisible = true;
-                StatusText.Text = "Online";
-                StatusLight.Fill = Brushes.LimeGreen;
+                //StatusText.Text = "Online";
+                // StatusLight.Fill = Brushes.LimeGreen;
+                serverStatus = ServerStatus.Starting;
+                UpdateServerStatusUI();
 
                 serverStartTime = DateTime.Now;
                 sessionPeakPlayers = 0;
@@ -992,11 +1012,21 @@ namespace HyLordServerUtil
                 memHistory.Clear();
                 cpuPeak = 0;
                 memPeak = 0;
+                perfStartUtc = DateTime.UtcNow;
 
                 lastCpuTime = server.Process.TotalProcessorTime;
                 lastCpuCheck = DateTime.Now;
 
                 AppendLog("Server started", LogType.Info);
+            });
+        }
+        private void OnServerBooted()
+        {
+            Dispatcher.Invoke(() =>
+            {
+                serverStatus = ServerStatus.Online;
+                UpdateServerStatusUI();
+                AppendLog("Server Finished starting", LogType.Info);
             });
         }
         private void OnServerStopped()
@@ -1006,8 +1036,10 @@ namespace HyLordServerUtil
                 ModsMoveEnabled = true;
                 ModsBannerVisible = false;
                 BansBannerVisible = false;
-                StatusText.Text = "Offline";
-                StatusLight.Fill = Brushes.Red;
+                serverStatus = ServerStatus.Offline;
+                UpdateServerStatusUI();
+                //StatusText.Text = "Offline";
+                //StatusLight.Fill = Brushes.Red;
 
                 serverStartTime = null;
 
@@ -1022,8 +1054,10 @@ namespace HyLordServerUtil
                 ModsMoveEnabled = true;
                 ModsBannerVisible = false;
                 BansBannerVisible = false;
-                StatusText.Text = "Crashed";
-                StatusLight.Fill = Brushes.DarkRed;
+                serverStatus = ServerStatus.Crashed;
+                UpdateServerStatusUI();
+                //StatusText.Text = "Crashed";
+                //StatusLight.Fill = Brushes.DarkRed;
 
                 AppendLog("⚠ Server crashed. Auto-restart engaged.", LogType.Error);
             });
@@ -1090,6 +1124,33 @@ namespace HyLordServerUtil
                 restartInProgress = false;
             }
         }
+
+        private void UpdateServerStatusUI()
+        {
+            switch (serverStatus)
+            {
+                case ServerStatus.Offline:
+                    StatusText.Text = "Offline";
+                    StatusLight.Fill = new SolidColorBrush(Color.FromRgb(255, 55, 55));
+                    break;
+                case ServerStatus.Starting:
+                    StatusText.Text = "Starting…";
+                    StatusLight.Fill = new SolidColorBrush(Color.FromRgb(55, 55, 255));
+                    break;
+                case ServerStatus.Online:
+                    StatusText.Text = "Online";
+                    StatusLight.Fill = new SolidColorBrush(Color.FromRgb(55, 255, 55));
+                    break;
+                case ServerStatus.Crashed:
+                    StatusText.Text = "Crashed";
+                    StatusLight.Fill = new SolidColorBrush(Color.FromRgb(255, 115, 55));
+                    break;
+            }
+        }
+
+
+
+
 
 
 
@@ -1289,55 +1350,66 @@ namespace HyLordServerUtil
             if (server?.Process == null || server.Process.HasExited)
                 return;
 
-            double memMb = server.Process.WorkingSet64 / (1024.0 * 1024.0);
-            MemoryText.Text = $"Memory: {memMb:0} MB";
-            PerfMemNow.Text = $"{memMb:0} MB";
-
-            var now = DateTime.Now;
-            var cpuTime = server.Process.TotalProcessorTime;
-
-            double cpuUsedMs = (cpuTime - lastCpuTime).TotalMilliseconds;
-            double elapsedMs = (now - lastCpuCheck).TotalMilliseconds;
-
-            double cpuPercent = 0;
-            if (elapsedMs > 0)
-                cpuPercent = cpuUsedMs / (elapsedMs * Environment.ProcessorCount) * 100.0;
-
-            if (cpuPercent < 0) cpuPercent = 0;
-            if (cpuPercent > 100) cpuPercent = 100;
-
-            CpuText.Text = $"CPU: {cpuPercent:0.0}%";
-            PerfCpuNow.Text = $"{cpuPercent:0.0}%";
-
-            lastCpuTime = cpuTime;
-            lastCpuCheck = now;
-
-            if (serverStartTime.HasValue)
+            bool warmup = IsPerfWarmup;
+            if (!warmup)
             {
-                var up = DateTime.Now - serverStartTime.Value;
+                server.Process.Refresh();
+                double memMb = server.Process.WorkingSet64 / (1024.0 * 1024.0);
+                MemoryText.Text = $"Memory: {memMb:0} MB";
+                PerfMemNow.Text = $"{memMb:0} MB";
 
-                if (up.TotalDays >= 1)
-                    PerfUptime.Text = $"{(int)up.TotalDays}d {up:hh\\:mm\\:ss}";
+                var now = DateTime.Now;
+                var cpuTime = server.Process.TotalProcessorTime;
+
+                double cpuUsedMs = (cpuTime - lastCpuTime).TotalMilliseconds;
+                double elapsedMs = (now - lastCpuCheck).TotalMilliseconds;
+
+                double cpuPercent = 0;
+                if (elapsedMs > 0)
+                    cpuPercent = cpuUsedMs / (elapsedMs * Environment.ProcessorCount) * 100.0;
+
+                if (cpuPercent < 0) cpuPercent = 0;
+                if (cpuPercent > 100) cpuPercent = 100;
+
+                CpuText.Text = $"CPU: {cpuPercent:0.0}%";
+                PerfCpuNow.Text = $"{cpuPercent:0.0}%";
+
+                lastCpuTime = cpuTime;
+                lastCpuCheck = now;
+
+                if (serverStartTime.HasValue)
+                {
+                    var up = DateTime.Now - serverStartTime.Value;
+
+                    if (up.TotalDays >= 1)
+                        PerfUptime.Text = $"{(int)up.TotalDays}d {up:hh\\:mm\\:ss}";
+                    else
+                        PerfUptime.Text = up.ToString(@"hh\:mm\:ss");
+                }
                 else
-                    PerfUptime.Text = up.ToString(@"hh\:mm\:ss");
-            }
-            else
+                {
+                    PerfUptime.Text = "--:--:--";
+                }
+
+                EnqueueRolling(cpuHistory, cpuPercent, PerfSeconds);
+                EnqueueRolling(memHistory, memMb, PerfSeconds);
+
+                cpuPeak = Math.Max(cpuPeak, cpuPercent);
+                memPeak = Math.Max(memPeak, memMb);
+                cpuAvg = cpuHistory.Count > 0 ? cpuHistory.Average() : 0;
+
+                PerfCpuSummary.Text = $"{cpuPercent:0.0}% / {cpuAvg:0.0}% / {cpuPeak:0.0}%";
+                PerfMemSummary.Text = $"{memMb:0} MB / {memPeak:0} MB";
+
+                DrawLineChart(CpuCanvas, cpuHistory, 0, 100);
+                DrawLineChart(MemCanvas, memHistory, 0, Math.Max(1, memPeak));
+            } else
             {
-                PerfUptime.Text = "--:--:--";
+                var left = (perfWarmup - (DateTime.UtcNow - perfStartUtc));
+                PerfCpuSummary.Text = $"Stabilizing...";
+                PerfMemSummary.Text = $"{left.Seconds}s";
+
             }
-
-            EnqueueRolling(cpuHistory, cpuPercent, PerfSeconds);
-            EnqueueRolling(memHistory, memMb, PerfSeconds);
-
-            cpuPeak = Math.Max(cpuPeak, cpuPercent);
-            memPeak = Math.Max(memPeak, memMb);
-            cpuAvg = cpuHistory.Count > 0 ? cpuHistory.Average() : 0;
-
-            PerfCpuSummary.Text = $"{cpuPercent:0.0}% / {cpuAvg:0.0}% / {cpuPeak:0.0}%";
-            PerfMemSummary.Text = $"{memMb:0} MB / {memPeak:0} MB";
-
-            DrawLineChart(CpuCanvas, cpuHistory, 0, 100);
-            DrawLineChart(MemCanvas, memHistory, 0, Math.Max(1, memPeak));
         }
         private static void EnqueueRolling(Queue<double> q, double value, int max)
         {

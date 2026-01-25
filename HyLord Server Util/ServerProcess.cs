@@ -22,7 +22,7 @@ namespace HyLordServerUtil
         public event Action ServerStarted;
         public event Action ServerStopped;
         public event Action ServerCrashed;
-        public event Action? ServerBooted;
+        public event Action ServerBooted;
 
         public event Action<PlayerInfo> PlayerJoined;
         public event Action<PlayerInfo> PlayerLeft;
@@ -290,6 +290,8 @@ namespace HyLordServerUtil
             {
                 sawBooted = true;
                 authRequested = false;
+                ServerBooted?.Invoke();
+                
                 return;
             }
 

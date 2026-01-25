@@ -583,7 +583,7 @@
                                 <TextBlock Grid.Row="0" Grid.Column="1" Text="Beta" Foreground="#E6E6E6"/>
 
                                 <TextBlock Grid.Row="1" Grid.Column="0" Text="Version:" Foreground="#AAA" Margin="0,6,0,0"/>
-                                <TextBlock Grid.Row="1" Grid.Column="1" Text="v0.4 (Jan 22 2026 07:22 AM)" Foreground="#E6E6E6" Margin="0,6,0,0"/>
+                                <TextBlock Grid.Row="1" Grid.Column="1" Text="v0.4.1 (Jan 24 2026 12:20 AM)" Foreground="#E6E6E6" Margin="0,6,0,0"/>
 
                                 <TextBlock Grid.Row="2" Grid.Column="0" Text="Author:" Foreground="#AAA" Margin="0,6,0,0"/>
                                 <TextBlock Grid.Row="2" Grid.Column="1" Margin="0,6,0,0" Foreground="#AAA">
